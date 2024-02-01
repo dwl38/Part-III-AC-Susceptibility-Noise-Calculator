@@ -10,11 +10,11 @@
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import tkinter
 import tkinter.ttk as ttk
 
 from suscep_calc import *
+from suscep_calc.material import Material
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
@@ -53,6 +53,19 @@ print('1/sqrt(eu) = ', (1/np.sqrt(VACUUM_PERMITTIVITY * VACUUM_PERMEABILITY)))
 print('c = ', SPEED_OF_LIGHT)
 print('Difference: ', (1/np.sqrt(VACUUM_PERMITTIVITY * VACUUM_PERMEABILITY)) - SPEED_OF_LIGHT)
 print()
+print()
+
+print('-' * 20)
+print('Now testing my code...')
+print()
+
+copper_material = Material.read_from_file('data/materials/copper.cfg')
+print('Succesfully created copper material')
+print(f'Conductivity is {Q_(copper_material.conductivity(), 1/(ureg.ohm*ureg.meter))}.')
+print(f'Magnetic susceptibility is {copper_material.magnetic_susceptibility()}.')
+print()
+
+quit()
 
 #========================================================================================================================
 # Construct application main window
