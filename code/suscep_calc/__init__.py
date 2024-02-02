@@ -17,7 +17,7 @@ SPEED_OF_LIGHT = Q_(299792458, ureg.meter/ureg.second)
 PROGRAM_NAME = 'AC Susceptibility Calculator'
 PROGRAM_VERSION = '0.0.1'
 PROGRAM_DESCRIPTION = ('A python tool for calculating the noise generated in an AC susceptibility measurement of an ' +
-                        'arbitrary nonlinear sample; authored by Darren Wayne Lim.')
+                        'arbitrary nonlinear sample; copyrighted (c) 2024 under the MIT License by Darren Wayne Lim.')
 
 #------------------------------------------------------------------------------------------------------------------------
 # Useful utility functions

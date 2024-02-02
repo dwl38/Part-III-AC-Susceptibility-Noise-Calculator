@@ -15,6 +15,7 @@ import tkinter.ttk as ttk
 
 from suscep_calc import *
 from suscep_calc.material import Material
+from suscep_calc.field.coil import Coil
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
@@ -63,6 +64,20 @@ copper_material = Material.read_from_file('data/materials/copper.cfg')
 print('Succesfully created copper material')
 print(f'Conductivity is {Q_(copper_material.conductivity(), 1/(ureg.ohm*ureg.meter))}.')
 print(f'Magnetic susceptibility is {copper_material.magnetic_susceptibility()}.')
+print()
+
+N_turns = 1000
+ang_freq = 60 * 2 * np.pi
+testing_coil = Coil(0.5, 10, N_turns, copper_material, 0.001)
+naive_impedance = VACUUM_PERMEABILITY * (N_turns**2) * np.pi * (Q_(0.5, ureg.meter)**2) / Q_(10, ureg.meter)
+print('Succesfully created coil')
+print(f'Theoretical impedance is {(1j * Q_(ang_freq, ureg.hertz) * naive_impedance).to("ohm")}.')
+print(f'Coil impedance is {Q_(testing_coil.get_impedance(ang_freq), ureg.ohm)}.')
+print()
+
+testing_coil = Coil(0.5, 10, 0.1, copper_material, 0.001)
+print('Succesfully created wire')
+print(f'Wire impedance is {Q_(testing_coil.get_impedance(ang_freq), ureg.ohm)}.')
 print()
 
 quit()
