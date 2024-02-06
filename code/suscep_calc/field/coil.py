@@ -105,42 +105,54 @@ class Coil(CircuitElement):
     def __point_calc_H_field(self, rel_pos: np.ndarray, surface_density: complex, wave_number: complex) -> np.ndarray:
         
         # Accuracy parameters
-        N_SEGMENTS_THETA = max(2000, 10 * int(self.n_turns)) # Number of helix segments of coil axis
-        N_SEGMENTS_RHO = 10                                  # Number of wire-radial segments
+        N_SEGMENTS_THETA = max(3000, 30 * int(self.n_turns)) # Number of helix segments of coil axis
+        N_SEGMENTS_RHO = 15                                  # Number of wire-radial segments
         N_SEGMENTS_PHI = 60                                  # Number of wire-azimuthal segments
 
-        # Some convenient definitions
+        # Some convenient scalars
         circumference = 2 * np.pi * self.n_turns * self.radius
         normalization = np.sqrt((circumference**2) + (self.length**2))
-        integral_elem = (normalization * self.wire_radius) / (2 * N_SEGMENTS_THETA * N_SEGMENTS_RHO * N_SEGMENTS_PHI)
-        result = np.zeros_like(rel_pos, dtype=complex)
+        circum_grad = circumference / normalization
+        length_grad = self.length / normalization
+        helicity = self.length / circumference
+        integral_elem = normalization / (2 * N_SEGMENTS_THETA * N_SEGMENTS_PHI)
 
-        # Integrate over theta
-        for theta in np.linspace(-np.pi * self.n_turns, np.pi * self.n_turns, N_SEGMENTS_THETA):
+        # Generate a uniform distribution of theta values to integrate over
+        theta = np.linspace(-np.pi * self.n_turns, np.pi * self.n_turns, N_SEGMENTS_THETA, endpoint = False)
 
-            length_elem = np.array((-circumference * np.sin(theta), circumference * np.cos(theta), self.length)) / normalization
-            helix_pos = np.array((np.cos(theta), np.sin(theta), self.length * theta / circumference)) * self.radius
-            radial_elem = np.array((np.cos(theta), np.sin(theta), 0.0))
-            perp_elem = np.array((self.length * np.sin(theta), -self.length * np.cos(theta), circumference)) / normalization
+        # Generate a non-uniform distribution of rho values to integrate over
+        rho_sqs = np.linspace(0, (self.wire_radius**2), N_SEGMENTS_RHO)
+        rho = np.sqrt(rho_sqs)
 
-            # Integrate over rho and phi
-            for rho in np.linspace(0, self.wire_radius, N_SEGMENTS_RHO):
+        # Generate a uniform distribution of phi values to integrate over
+        phi = np.linspace(0, 2 * np.pi, N_SEGMENTS_PHI, endpoint=False)
 
-                phi = np.linspace(0, 2 * np.pi, N_SEGMENTS_PHI, endpoint=False)
-                ang_vecs = np.tensordot(np.cos(phi), radial_elem, axes=0) + np.tensordot(np.sin(phi), perp_elem, axes=0)
-                displacements = rel_pos - helix_pos - (rho * ang_vecs)
-                cross_products = np.cross(length_elem, displacements)
-                distance_cubes = np.power(np.linalg.norm(displacements, axis=1), 3)
+        # Generate tangent vectors corresponding to theta
+        et_vec = np.stack((-circum_grad * np.sin(theta), circum_grad * np.cos(theta), np.full_like(theta, length_grad)), axis=-1)
+        er_vec = np.stack((np.cos(theta), np.sin(theta), np.zeros_like(theta)), axis=-1)
+        ez_vec = np.stack((length_grad * np.sin(theta), -length_grad * np.cos(theta), np.full_like(theta, circum_grad)), axis=-1)
 
-                # Current density affected by skin effect for AC (or uniform for DC)
-                if wave_number is None:
-                    density = surface_density
-                else:
-                    density = surface_density * jv(0, wave_number * rho) / jv(0, wave_number * self.wire_radius)
-                
-                result += np.sum((cross_products * density * rho * integral_elem) / distance_cubes[:, np.newaxis], axis=0)
+        # Calculate position of wire volume element for each value of rho, phi
+        helix_pos = self.radius * np.array((np.cos(theta), np.sin(theta), helicity * theta)).transpose() # Shape is (N_theta, 3)
+        ang_vecs = np.tensordot(np.cos(phi), er_vec, axes=0) + np.tensordot(np.sin(phi), ez_vec, axes=0) # Shape is (N_phi, N_theta, 3)
+        wire_pos = helix_pos + np.tensordot(rho, ang_vecs, axes=0)                                       # Shape is (N_rho, N_phi, N_theta, 3)
 
-        return result
+        # Calculate current density, which is uniform for DC and affected by skin effect for AC
+        if wave_number is None:
+            density = np.full_like(rho, surface_density)
+        else:
+            density = surface_density * jv(0, wave_number * rho) / jv(0, wave_number * self.wire_radius)
+
+        # Calculate the integrand
+        displacements = rel_pos - wire_pos                                       # Shape is (N_rho, N_phi, N_theta, 3)
+        cross_products = np.cross(et_vec, displacements)                         # Shape is (N_rho, N_phi, N_theta, 3)
+        distance_inv_cubes = np.power(np.linalg.norm(displacements, axis=3), -3) # Shape is (N_rho, N_phi, N_theta)
+            
+        # Integrate over theta and phi
+        integrands = np.einsum('ijkl,i,i,ijk->il', cross_products, density, rho, distance_inv_cubes, optimize=True) * integral_elem
+        
+        # Integrate over rho
+        return np.trapz(integrands, rho, axis=0)
 
     #--------------------------------------------------------------------------------------------------------------------
     # Returns the naive impedance of the coil; note that the real part (resistance) does account for skin effect, but the
