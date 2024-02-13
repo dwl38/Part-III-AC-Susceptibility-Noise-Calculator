@@ -9,6 +9,7 @@
 from .. import *
 from ..material import Material
 from ..circuit.circuit_element import CircuitElement
+from .vector_field import VectorField
 import numpy as np
 import warnings
 
@@ -133,6 +134,60 @@ class SimpleCoil(CircuitElement):
         
         # Integrate over theta
         return np.sum(cross_products * distance_inv_cubes[:, np.newaxis], axis=0) * integral_elem
+    
+    #--------------------------------------------------------------------------------------------------------------------
+    # Calculates the AC voltage phasor induced in this SimpleCoil, given a B (phasor) field and its frequency. Note that
+    # the coil is approximated as a series of parallel loops, rather than with finite helicity; this is based on the fact
+    # that a closed curve tracing the helix, where a 'straight line' is drawn directly between the endpoints in order to
+    # close the curve, will have the path integral along that straight line segment approximately cancelling the helicity
+    # of the coil itself. As such it suffices to compute parallel disconnected loops instead of a helix.
+    #
+    #     - B_field:  (VectorField) The B field, as a C3 vector phasor, at all locations in space. Importantly, this coil
+    #                 must be fully contained within the convex hull of the VectorField's data points!
+    #     - ang_freq: (float) The angular frequency for the AC field passing through the coil; set to zero for DC.
+    #
+
+    def calculate_induced_voltage(self, B_field: VectorField, ang_freq: float) -> complex:
+
+        if ang_freq is None or ang_freq == 0.0:
+            return 0.0
+
+        # Accuracy parameters
+        N_SEGMENTS_RHO = 15
+        N_SEGMENTS_PHI = 60
+
+        # Generate a non-uniform distribution of rho values to integrate over
+        rho_sqs = np.linspace(0, (self.wire_radius**2), N_SEGMENTS_RHO)
+        rho = np.sqrt(rho_sqs)
+
+        # Generate a uniform distribution of phi and z values to integrate over
+        phi = np.linspace(0, 2 * np.pi, N_SEGMENTS_PHI, endpoint=False)
+        z = np.linspace(-self.length, self.length, int(self.n_turns))
+
+        # Generate plane vectors for plane of loop
+        if np.allclose(self.axis, [0, 0, 1]):
+            ex = np.array((1, 0, 0))
+            ey = np.array((0, 1, 0))
+        elif np.allclose(self.axis, [0, 0, -1]):
+            ex = np.array((1, 0, 0))
+            ey = np.array((0, -1, 0))
+        else:
+            ex = np.cross(self.axis, [0, 0, 1])
+            ex = ex / np.linalg.norm(ex)
+            ey = np.cross(self.axis, ex)
+
+        # Calculate position of loop area element for each value of z, rho, phi
+        axis_vecs = np.tensordot(z, self.axis, axes=0)                                           # Shape is (N_turns, 3)
+        ang_vecs = np.tensordot(np.cos(phi), ex, axes=0) + np.tensordot(np.sin(phi), ey, axes=0) # Shape is (N_phi, 3)
+        area_elem_pos = self.center + np.tensordot(rho, ang_vecs, axes=0)                        # Shape is (N_rho, N_phi, 3)
+        area_elem_pos = area_elem_pos[np.newaxis,:,:,:] + axis_vecs[:, np.newaxis, np.newaxis,:] # Shape is (N_turns, N_rho, N_phi, 3)
+
+        # Get projection of B field and integrate over z and phi
+        flux_elems = np.dot(B_field(area_elem_pos), self.axis)                                                      # Shape is (N_turns, N_rho, N_phi)
+        integrands = np.sum(flux_elems * rho[np.newaxis, :, np.newaxis], axis=(0,2)) * (4 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
+
+        # Integrate over rho
+        return (-1j * ang_freq) * np.trapz(integrands, rho, axis=0)
 
     #--------------------------------------------------------------------------------------------------------------------
     # Returns the impedance of the coil based on naive calculations

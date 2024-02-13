@@ -47,11 +47,11 @@ print()
 N_turns = 180
 ang_freq = 60 * 2 * np.pi
 radius = 0.5
-length = 1.8
+length = 2
 #testing_coil = Coil(radius, length, N_turns, copper_material, 0.001)
-testing_coil = SimpleCoil(radius, length, N_turns, copper_material, 0.001)
+testing_coil = SimpleCoil(radius, length, N_turns, copper_material, 0.001, axis=[0.2, 0, 0.7])
 #testing_coil = Loop(radius, copper_material, 0.001, axis=[0.2,0,0.8])
-naive_impedance = VACUUM_PERMEABILITY * (N_turns**2) * np.pi * (Q_(radius, ureg.meter)**2) / Q_(10, ureg.meter)
+naive_impedance = VACUUM_PERMEABILITY * (N_turns**2) * np.pi * (Q_(radius, ureg.meter)**2) / Q_(length, ureg.meter)
 print('Succesfully created coil')
 print(f'Theoretical impedance is {(1j * Q_(ang_freq, ureg.hertz) * naive_impedance).to("ohm")}.')
 print(f'Coil impedance is {Q_(testing_coil.get_impedance(ang_freq), ureg.ohm)}.')
@@ -72,7 +72,7 @@ for i, x in enumerate(np.linspace(extent[0], extent[1], N_x)):
     for j, y in enumerate(np.linspace(extent[0], extent[1], N_x)):
         for k, z in enumerate(np.linspace(extent[2], extent[3], N_z)):
             test_points[(N_z * N_x * i) + (N_z * j) + k] = np.array((x, y, z))
-test_fields = testing_coil.calculate_H_field(test_points, None, 1.0)
+test_fields = testing_coil.calculate_H_field(test_points, ang_freq, 1.0)
 test_fields = VACUUM_PERMEABILITY_SI * np.real(test_fields)
 field_strengths = np.linalg.norm(test_fields, axis=1)
 print('Calculation complete')
@@ -84,7 +84,7 @@ xpts, ypts = np.meshgrid(np.linspace(extent[0], extent[1], N_x), np.linspace(ext
 pts = np.stack((xpts, np.zeros_like(xpts), ypts), axis=-1)
 field_pts = np.real(field(pts))
 stream_c = np.linalg.norm(field_pts, axis=-1)
-            
+
 fig, axs = plt.subplots(1, 2)
 stream = axs[0].streamplot(xpts, ypts, field_pts[:,:,0], field_pts[:,:,2], color=stream_c, cmap='autumn')
 fig.colorbar(stream.lines, ax=axs[0])
@@ -99,9 +99,13 @@ axs[1].set_xlabel('x [m]')
 axs[1].set_ylabel('z [m]')
 plt.show()
 
-induction_coil = Loop(radius/2, copper_material, 0.001)
+induction_coil = SimpleCoil(radius/2, length/2, N_turns/2, copper_material, 0.001)
 voltage = induction_coil.calculate_induced_voltage(field, ang_freq)
-print(f'60Hz AC current of 1A in outer coil produces voltage of {Q_(voltage, ureg.volt)} in inner loop.')
+print(f'60Hz AC current of 1A in outer coil produces voltage of {Q_(voltage, ureg.volt)} in inner coil.')
+print()
+voltage = testing_coil.calculate_induced_voltage(field, ang_freq)
+print(f'Outer coil self-induced voltage is {Q_(voltage, ureg.volt)} according to integral.')
+print(f'Expected {Q_(-testing_coil.get_impedance(ang_freq), ureg.volt)}.')
 print()
 quit()
 

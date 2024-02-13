@@ -151,7 +151,7 @@ class Loop(CircuitElement):
 
         # Get projection of B field and integrate over phi
         flux_elems = np.dot(B_field(area_elem_pos), self.axis)                                      # Shape is (N_rho, N_phi)
-        integrands = np.sum(flux_elems * rho[:, np.newaxis], axis=1) * (2 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
+        integrands = np.sum(flux_elems * rho[:, np.newaxis], axis=1) * (4 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
 
         # Integrate over rho
         return (-1j * ang_freq) * np.trapz(integrands, rho, axis=0)
