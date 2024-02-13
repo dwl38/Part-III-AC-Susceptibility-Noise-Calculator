@@ -13,6 +13,7 @@ The 'code/' folder contains the source code, while the 'dist/' folder contains t
 - Python installed on your computer, version at least 3.0
 - The following Python libraries installed:
 	- `numpy`
+	- `scipy`
 	- `matplotlib`
 	- `pandas`
 	- `pint`

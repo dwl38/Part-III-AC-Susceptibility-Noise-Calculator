@@ -1,6 +1,6 @@
 #========================================================================================================================
-# The Coil class is a model of a helical solenoid made of an Ohmic material, taking into account realistic effects like
-# finite wire thickness and helical 'twist' of the coil.
+# The SimpleCoil class is a model of a helical solenoid made of an Ohmic material. The wire is modelled as being uniform
+# and infinitesimally thin; the only 'realistic' effect implemented is the helical 'twist' of the coil.
 #------------------------------------------------------------------------------------------------------------------------
 # The direction of winding is always assumed to be 'right-handed' wrt the axis. The helicity is taken to be uniform
 # throughout the coil.
@@ -10,16 +10,15 @@ from .. import *
 from ..material import Material
 from ..circuit.circuit_element import CircuitElement
 import numpy as np
-from scipy.special import jv
 import warnings
 
 #========================================================================================================================
 # Class definition
 
-class Coil(CircuitElement):
+class SimpleCoil(CircuitElement):
 
     #--------------------------------------------------------------------------------------------------------------------
-    # Class constructor for a new Coil. The parameters are as follows:
+    # Class constructor for a new SimpleCoil. The parameters are as follows:
     #
     #     - coil_radius:    (float) The radius of the coil.
     #     - coil_length:    (float) The end-to-end length of the coil.
@@ -68,7 +67,7 @@ class Coil(CircuitElement):
             
             
     #--------------------------------------------------------------------------------------------------------------------
-    # Calculates the H field at a given position, produced by this Coil given a current.
+    # Calculates the H field at a given position, produced by this SimpleCoil given a current.
     #
     #     - pos:      (NDArray) This can be either a vector specifying a position to calculate the H field at, or an
     #                 array of vectors representing the positions to calculate the H field at. The output type of this
@@ -92,24 +91,12 @@ class Coil(CircuitElement):
             rot_mat += np.tensordot(rot_axis, rot_axis, axes=0) * (1 - np.cos(theta))
         inv_rot_mat = np.transpose(rot_mat)
 
-        if ang_freq is None or ang_freq == 0.0:
-            wave_number = None
-            surface_density = current / (np.pi * (self.wire_radius**2))
-        else:
-            skin_depth = np.sqrt(2 / (ang_freq * self.material.conductivity() *
-                         (1.0 + self.material.magnetic_susceptibility()) * VACUUM_PERMEABILITY_SI))
-            wave_number = (1 - 1j) / skin_depth
-            surface_density = ((current * wave_number * jv(0, wave_number * self.wire_radius)) / 
-                               (np.pi * self.wire_thickness * jv(1, wave_number * self.wire_radius)))
-
         if is_np_vector(pos):
-            return np.dot(inv_rot_mat, self.__point_calc_H_field(np.dot(rot_mat, pos - self.center),
-                                                                 surface_density, wave_number))
+            return np.dot(inv_rot_mat, self.__point_calc_H_field(np.dot(rot_mat, pos - self.center), current))
         elif len(pos.shape) == 2 and is_np_vector(pos[0]):
             result = np.empty_like(pos)
             for i, point in enumerate(pos):
-                result[i] = np.dot(inv_rot_mat, self.__point_calc_H_field(np.dot(rot_mat, point - self.center),
-                                                                          surface_density, wave_number))
+                result[i] = np.dot(inv_rot_mat, self.__point_calc_H_field(np.dot(rot_mat, point - self.center), current))
             return result
         else:
             raise RuntimeError('Input parameter pos is not an acceptable format!')
@@ -117,12 +104,10 @@ class Coil(CircuitElement):
     #--------------------------------------------------------------------------------------------------------------------
     # "Secret" internal function for calculate_H_field(); performs a single-point calculation for a relative position.
 
-    def __point_calc_H_field(self, rel_pos: np.ndarray, surface_density: complex, wave_number: complex) -> np.ndarray:
+    def __point_calc_H_field(self, rel_pos: np.ndarray, current: complex) -> np.ndarray:
         
         # Accuracy parameters
-        N_SEGMENTS_THETA = max(3000, 30 * int(self.n_turns)) # Number of helix segments of coil axis
-        N_SEGMENTS_RHO = 15                                  # Number of wire-radial segments
-        N_SEGMENTS_PHI = 60                                  # Number of wire-azimuthal segments
+        N_SEGMENTS_THETA = max(20000, 200 * int(self.n_turns)) # Number of helix segments of coil axis
 
         # Some convenient scalars
         circumference = 2 * np.pi * self.n_turns * self.radius
@@ -130,68 +115,39 @@ class Coil(CircuitElement):
         circum_grad = circumference / normalization
         length_grad = self.length / normalization
         helicity = self.length / circumference
-        integral_elem = normalization / (2 * N_SEGMENTS_THETA * N_SEGMENTS_PHI)
+        integral_elem = (current * self.n_turns) / (4 * N_SEGMENTS_THETA)
 
         # Generate a uniform distribution of theta values to integrate over
         theta = np.linspace(-np.pi * self.n_turns, np.pi * self.n_turns, N_SEGMENTS_THETA, endpoint = False)
 
-        # Generate a non-uniform distribution of rho values to integrate over
-        rho_sqs = np.linspace(0, (self.wire_radius**2), N_SEGMENTS_RHO)
-        rho = np.sqrt(rho_sqs)
-
-        # Generate a uniform distribution of phi values to integrate over
-        phi = np.linspace(0, 2 * np.pi, N_SEGMENTS_PHI, endpoint=False)
-
-        # Generate tangent vectors corresponding to theta
+        # Generate tangent vector corresponding to theta
         et_vec = np.stack((-circum_grad * np.sin(theta), circum_grad * np.cos(theta), np.full_like(theta, length_grad)), axis=-1)
-        er_vec = np.stack((np.cos(theta), np.sin(theta), np.zeros_like(theta)), axis=-1)
-        ez_vec = np.stack((length_grad * np.sin(theta), -length_grad * np.cos(theta), np.full_like(theta, circum_grad)), axis=-1)
 
         # Calculate position of wire volume element for each value of rho, phi
-        helix_pos = self.radius * np.array((np.cos(theta), np.sin(theta), helicity * theta)).transpose() # Shape is (N_theta, 3)
-        ang_vecs = np.tensordot(np.cos(phi), er_vec, axes=0) + np.tensordot(np.sin(phi), ez_vec, axes=0) # Shape is (N_phi, N_theta, 3)
-        wire_pos = helix_pos + np.tensordot(rho, ang_vecs, axes=0)                                       # Shape is (N_rho, N_phi, N_theta, 3)
-
-        # Calculate current density, which is uniform for DC and affected by skin effect for AC
-        if wave_number is None:
-            density = np.full_like(rho, surface_density)
-        else:
-            density = surface_density * jv(0, wave_number * rho) / jv(0, wave_number * self.wire_radius)
+        wire_pos = self.radius * np.array((np.cos(theta), np.sin(theta), helicity * theta)).transpose() # Shape is (N_theta, 3)
 
         # Calculate the integrand
-        displacements = rel_pos - wire_pos                                       # Shape is (N_rho, N_phi, N_theta, 3)
-        cross_products = np.cross(et_vec, displacements)                         # Shape is (N_rho, N_phi, N_theta, 3)
-        distance_inv_cubes = np.power(np.linalg.norm(displacements, axis=3), -3) # Shape is (N_rho, N_phi, N_theta)
-            
-        # Integrate over theta and phi
-        integrands = np.einsum('ijkl,i,i,ijk->il', cross_products, density, rho, distance_inv_cubes, optimize=True) * integral_elem
+        displacements = rel_pos - wire_pos                                       # Shape is (N_theta, 3)
+        cross_products = np.cross(et_vec, displacements)                         # Shape is (N_theta, 3)
+        distance_inv_cubes = np.power(np.linalg.norm(displacements, axis=1), -3) # Shape is (N_theta)
         
-        # Integrate over rho
-        return np.trapz(integrands, rho, axis=0)
+        # Integrate over theta
+        return np.sum(cross_products * distance_inv_cubes[:, np.newaxis], axis=0) * integral_elem
 
     #--------------------------------------------------------------------------------------------------------------------
-    # Returns the naive impedance of the coil; note that the real part (resistance) does account for skin effect, but the
-    # imaginary part (inductance) does not account for any of the realistic effects beyond skin effect!
+    # Returns the impedance of the coil based on naive calculations
 
     def get_impedance(self, ang_freq: float) -> complex:
         
         total_wire_length = np.sqrt((2 * np.pi * self.radius * self.n_turns)**2 + (self.length**2))
 
-        # Calculating impedance per unit length of the wire due to skin effect
-        if ang_freq is None or ang_freq == 0.0:
-            wire_impedance = (total_wire_length / (self.material.conductivity() * np.pi * (self.wire_radius**2)))
-        else:
-            skin_depth = np.sqrt(2 / (ang_freq * self.material.conductivity() *
-                         (1.0 + self.material.magnetic_susceptibility()) * VACUUM_PERMEABILITY_SI))
-            wave_number = (1 - 1j) / skin_depth
-            skin_factor = jv(0, wave_number * self.wire_radius) / jv(1, wave_number * self.wire_radius)
-            wire_impedance = ((wave_number / (self.material.conductivity() * np.pi * self.wire_thickness)) *
-                              skin_factor * total_wire_length)
+        # Naive calculation of resistance for Ohmic wire
+        resistance = (total_wire_length / (self.material.conductivity() * np.pi * (self.wire_radius**2)))
 
         # Naive calculation of inductance for an ideal solenoid
         inductance = (VACUUM_PERMEABILITY_SI * (self.n_turns**2) * np.pi * (self.radius**2) / self.length)
 
-        return (wire_impedance + (1j * ang_freq * inductance))
+        return (resistance + (1j * ang_freq * inductance))
 
     #--------------------------------------------------------------------------------------------------------------------
     # Satisfying CircuitElement inheritance requirements
