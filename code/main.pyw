@@ -73,12 +73,12 @@ for i, x in enumerate(np.linspace(extent[0], extent[1], N_x)):
         for k, z in enumerate(np.linspace(extent[2], extent[3], N_z)):
             test_points[(N_z * N_x * i) + (N_z * j) + k] = np.array((x, y, z))
 test_fields = testing_coil.calculate_H_field(test_points, ang_freq, 1.0)
-test_fields = VACUUM_PERMEABILITY_SI * np.real(test_fields)
+test_fields = np.real(test_fields)
 field_strengths = np.linalg.norm(test_fields, axis=1)
 print('Calculation complete')
 print()
 
-field = VectorField(test_points, test_fields)
+field = VACUUM_PERMEABILITY_SI * VectorField(test_points, test_fields)
 
 xpts, ypts = np.meshgrid(np.linspace(extent[0], extent[1], N_x), np.linspace(extent[2], extent[3], N_z))
 pts = np.stack((xpts, np.zeros_like(xpts), ypts), axis=-1)
