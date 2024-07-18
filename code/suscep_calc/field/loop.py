@@ -150,8 +150,11 @@ class Loop(CircuitElement):
         area_elem_pos = self.center + np.tensordot(rho, ang_vecs, axes=0)                        # Shape is (N_rho, N_phi, 3)
 
         # Get projection of B field and integrate over phi
-        flux_elems = np.dot(B_field(area_elem_pos), self.axis)                                      # Shape is (N_rho, N_phi)
-        integrands = np.sum(flux_elems * rho[:, np.newaxis], axis=1) * (4 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
+        flux_elems = np.dot(B_field(area_elem_pos), self.axis)                                         # Shape is (N_rho, N_phi)
+        err_no = np.sum(np.isnan(flux_elems))
+        if err_no > 0:
+            warnings.warn(f'Encountered {err_no} NaNs during induced voltage calculation!')
+        integrands = np.nansum(flux_elems * rho[:, np.newaxis], axis=1) * (4 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
 
         # Integrate over rho
         return (-1j * ang_freq) * np.trapz(integrands, rho, axis=0)

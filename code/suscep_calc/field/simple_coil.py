@@ -80,22 +80,22 @@ class SimpleCoil(CircuitElement):
     def calculate_H_field(self, pos: np.ndarray, ang_freq: float, current: complex) -> np.ndarray:
 
         if np.allclose(self.axis, [0, 0, 1]):
-            rot_mat = np.eye(3)
+            rot_mat = np.eye(3, dtype=complex)
         elif np.allclose(self.axis, [0, 0, -1]):
-            rot_mat = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+            rot_mat = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=complex)
         else:
             rot_axis = np.cross(self.axis, [0, 0, 1])
             theta = np.arcsin(np.linalg.norm(rot_axis))
             rot_axis = rot_axis / np.linalg.norm(rot_axis)
-            rot_mat = np.eye(3) * np.cos(theta)
-            rot_mat += np.cross(np.eye(3), rot_axis) * np.sin(theta)
+            rot_mat = np.eye(3, dtype=complex) * np.cos(theta)
+            rot_mat += np.cross(np.eye(3, dtype=complex), rot_axis) * np.sin(theta)
             rot_mat += np.tensordot(rot_axis, rot_axis, axes=0) * (1 - np.cos(theta))
         inv_rot_mat = np.transpose(rot_mat)
 
         if is_np_vector(pos):
             return np.dot(inv_rot_mat, self.__point_calc_H_field(np.dot(rot_mat, pos - self.center), current))
         elif len(pos.shape) == 2 and is_np_vector(pos[0]):
-            result = np.empty_like(pos)
+            result = np.empty_like(pos, dtype=complex)
             for i, point in enumerate(pos):
                 result[i] = np.dot(inv_rot_mat, self.__point_calc_H_field(np.dot(rot_mat, point - self.center), current))
             return result
@@ -162,7 +162,7 @@ class SimpleCoil(CircuitElement):
 
         # Generate a uniform distribution of phi and z values to integrate over
         phi = np.linspace(0, 2 * np.pi, N_SEGMENTS_PHI, endpoint=False)
-        z = np.linspace(-self.length, self.length, int(self.n_turns))
+        z = np.linspace(-0.5 * self.length, 0.5 * self.length, int(self.n_turns))
 
         # Generate plane vectors for plane of loop
         if np.allclose(self.axis, [0, 0, 1]):
@@ -183,8 +183,14 @@ class SimpleCoil(CircuitElement):
         area_elem_pos = area_elem_pos[np.newaxis,:,:,:] + axis_vecs[:, np.newaxis, np.newaxis,:] # Shape is (N_turns, N_rho, N_phi, 3)
 
         # Get projection of B field and integrate over z and phi
-        flux_elems = np.dot(B_field(area_elem_pos), self.axis)                                                      # Shape is (N_turns, N_rho, N_phi)
-        integrands = np.sum(flux_elems * rho[np.newaxis, :, np.newaxis], axis=(0,2)) * (4 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
+        flux_elems = np.dot(B_field(area_elem_pos), self.axis)                                                         # Shape is (N_turns, N_rho, N_phi)
+        err_no = np.sum(np.isnan(flux_elems))
+        if err_no > 0:
+            print(f'[ERROR] Encountered {err_no} NaNs out of {int(self.n_turns) * N_SEGMENTS_RHO * N_SEGMENTS_PHI} points during induced voltage calculation!')
+            a, b, c = np.transpose(np.nonzero(np.isnan(flux_elems)))[0]
+            x, y, z = area_elem_pos[a, b, c]
+            print(f'[ERROR] Example position that is out-of-bounds: ({x}, {y}, {z})')
+        integrands = np.nansum(flux_elems * rho[np.newaxis, :, np.newaxis], axis=(0,2)) * (4 * np.pi / N_SEGMENTS_PHI) # Shape is (N_rho)
 
         # Integrate over rho
         return (-1j * ang_freq) * np.trapz(integrands, rho, axis=0)

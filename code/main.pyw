@@ -8,17 +8,19 @@
 #========================================================================================================================
 
 import argparse
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import tkinter
 import tkinter.ttk as ttk
+import tkinter.filedialog
 
 from suscep_calc import *
-from suscep_calc.material import Material
-from suscep_calc.field import *
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.backend_bases import key_press_handler
-from matplotlib.figure import Figure
+#from suscep_calc.material import Material
+#from suscep_calc.field import *
+#from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+#from matplotlib.backend_bases import key_press_handler
+#from matplotlib.figure import Figure
 
 #========================================================================================================================
 # Check for debug mode via command-line arguments
@@ -35,114 +37,338 @@ DEBUG_FLAG = program_args.debug
 if DEBUG_FLAG:
     print('Program launched in debug mode!\n')
     
+PROGRAM_DIRECTORY = os.getcwd()
+
 #========================================================================================================================
 # Testing, to be removed!!!
 
-copper_material = Material.read_from_file('data/materials/copper.cfg')
-print('Succesfully created copper material')
-print(f'Conductivity is {Q_(copper_material.conductivity(), 1/(ureg.ohm*ureg.meter))}.')
-print(f'Magnetic susceptibility is {copper_material.magnetic_susceptibility()}.')
-print()
+# ...
 
-N_turns = 180
-ang_freq = 60 * 2 * np.pi
-radius = 0.5
-length = 2
-#testing_coil = Coil(radius, length, N_turns, copper_material, 0.001)
-testing_coil = SimpleCoil(radius, length, N_turns, copper_material, 0.001, axis=[0.2, 0, 0.7])
-#testing_coil = Loop(radius, copper_material, 0.001, axis=[0.2,0,0.8])
-naive_impedance = VACUUM_PERMEABILITY * (N_turns**2) * np.pi * (Q_(radius, ureg.meter)**2) / Q_(length, ureg.meter)
-print('Succesfully created coil')
-print(f'Theoretical impedance is {(1j * Q_(ang_freq, ureg.hertz) * naive_impedance).to("ohm")}.')
-print(f'Coil impedance is {Q_(testing_coil.get_impedance(ang_freq), ureg.ohm)}.')
-print()
-print(f'In theory 1A produces H field of {Q_(N_turns / length, ureg.ampere/ureg.meter)}.')
-#print(f'In theory 1A produces H field of {Q_(1 / (2 * radius), ureg.ampere/ureg.meter)}.')
-field = testing_coil.calculate_H_field(np.array((0, 0, 0)), None, 1.0)
-print(f'DC current of 1A produces H field of {Q_(field, ureg.ampere/ureg.meter)}.')
-field = testing_coil.calculate_H_field(np.array((0, 0, 0)), 1200 * np.pi, 1.0)
-print(f'600Hz AC current of 1A produces H field of {Q_(field, ureg.ampere/ureg.meter)}.')
-print()
+#========================================================================================================================
+# Utility functions
 
-N_x = 20
-N_z = 35
-extent = (-1, 1, -1.8, 1.8)
-test_points = np.zeros((N_x * N_x * N_z, 3), dtype=float)
-for i, x in enumerate(np.linspace(extent[0], extent[1], N_x)):
-    for j, y in enumerate(np.linspace(extent[0], extent[1], N_x)):
-        for k, z in enumerate(np.linspace(extent[2], extent[3], N_z)):
-            test_points[(N_z * N_x * i) + (N_z * j) + k] = np.array((x, y, z))
-test_fields = testing_coil.calculate_H_field(test_points, ang_freq, 1.0)
-test_fields = np.real(test_fields)
-field_strengths = np.linalg.norm(test_fields, axis=1)
-print('Calculation complete')
-print()
+def is_num(x) -> bool:
+    try:
+        float(x)
+        return True
+    except:
+        return False
 
-field = VACUUM_PERMEABILITY_SI * VectorField(test_points, test_fields)
-
-xpts, ypts = np.meshgrid(np.linspace(extent[0], extent[1], N_x), np.linspace(extent[2], extent[3], N_z))
-pts = np.stack((xpts, np.zeros_like(xpts), ypts), axis=-1)
-field_pts = np.real(field(pts))
-stream_c = np.linalg.norm(field_pts, axis=-1)
-
-fig, axs = plt.subplots(1, 2)
-stream = axs[0].streamplot(xpts, ypts, field_pts[:,:,0], field_pts[:,:,2], color=stream_c, cmap='autumn')
-fig.colorbar(stream.lines, ax=axs[0])
-axs[0].set_title('B field of coil (in xz plane)')
-axs[0].set_xlabel('x [m]')
-axs[0].set_ylabel('z [m]')
-
-intensity = axs[1].imshow(field_pts[:,:,1], origin='lower', extent=extent, aspect='auto', cmap='bwr', interpolation='bicubic')
-fig.colorbar(intensity, ax=axs[1])
-axs[1].set_title('B field of coil (y component)')
-axs[1].set_xlabel('x [m]')
-axs[1].set_ylabel('z [m]')
-plt.show()
-
-induction_coil = SimpleCoil(radius/2, length/2, N_turns/2, copper_material, 0.001)
-voltage = induction_coil.calculate_induced_voltage(field, ang_freq)
-print(f'60Hz AC current of 1A in outer coil produces voltage of {Q_(voltage, ureg.volt)} in inner coil.')
-print()
-voltage = testing_coil.calculate_induced_voltage(field, ang_freq)
-print(f'Outer coil self-induced voltage is {Q_(voltage, ureg.volt)} according to integral.')
-print(f'Expected {Q_(-testing_coil.get_impedance(ang_freq), ureg.volt)}.')
-print()
-quit()
+def is_pos_num(x) -> bool:
+    try:
+        return float(x) >= 0.0
+    except:
+        return False
+    
+def is_pos_int(x) -> bool:
+    try:
+        return int(x) >= 0
+    except:
+        return False
 
 #========================================================================================================================
 # Construct application main window
 
 root = tkinter.Tk()
 root.wm_title(PROGRAM_NAME + ' v' + PROGRAM_VERSION)
+root.resizable(False, False)
+num_validator = root.register(is_pos_num) # Validator for enforcing user input as nonnegative real numbers
+int_validator = root.register(is_pos_int) # Validator for enforcing user input as nonnegative integers
 
-fig = Figure(figsize=(5,4), dpi=100)
-axes = fig.add_subplot()
-line, = axes.quiver(test_points[:,0], test_points[:,2], test_fields[:,0], test_fields[:,2])
-axes.set_xlabel('x')
-axes.set_ylabel('z')
+frame_main = ttk.Frame(root, padding=10)
+frame_main.grid()
 
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.draw()
+# Construct submenu for drive coil
 
-toolbar = NavigationToolbar2Tk(canvas, root)
-toolbar.update()
+frame_drivecoil = ttk.LabelFrame(frame_main, text='Drive Coil Parameters', padding=10)
+frame_drivecoil.grid(column=0, row=0, padx=5, pady=5)
 
-canvas.mpl_connect('key_press_event', lambda event: print(f'Key pressed: {event.key}'))
-canvas.mpl_connect('key_press_event', key_press_handler)
+drivecoil_radius_label = ttk.Label(frame_drivecoil, text='Nominal coil radius:')
+drivecoil_radius_label.grid(column=0, row=0, sticky=tkinter.E)
+drivecoil_radius_entry_variable = tkinter.StringVar(value='0.0')
+drivecoil_radius_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_radius_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+drivecoil_radius_entry.grid(column=1, row=0, sticky=tkinter.W+tkinter.E)
+drivecoil_radius_units_variable = tkinter.StringVar(value='m')
+drivecoil_radius_units = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_radius_units_variable, values=LENGTH_UNITS, width=5)
+drivecoil_radius_units.grid(column=2, row=0, sticky=tkinter.W+tkinter.E)
+drivecoil_radius_units.state(['!disabled', 'readonly'])
 
-button_quit = ttk.Button(master=root, text='Quit', command=root.destroy)
-"""
-def update_frequency(new_val):
-    f = float(new_val)
-    line.set_data(t, 2 * np.sin(2 * np.pi * f * t))
-    canvas.draw()
+drivecoil_length_label = ttk.Label(frame_drivecoil, text='Coil length:')
+drivecoil_length_label.grid(column=0, row=1, sticky=tkinter.E)
+drivecoil_length_entry_variable = tkinter.StringVar(value='0.0')
+drivecoil_length_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_length_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+drivecoil_length_entry.grid(column=1, row=1, sticky=tkinter.W+tkinter.E)
+drivecoil_length_units_variable = tkinter.StringVar(value='m')
+drivecoil_length_units = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_length_units_variable, values=LENGTH_UNITS, width=5)
+drivecoil_length_units.grid(column=2, row=1, sticky=tkinter.W+tkinter.E)
+drivecoil_length_units.state(['!disabled', 'readonly'])
 
-slider_update = ttk.Scale(root, from_=1, to=5, orient=tkinter.HORIZONTAL, command=update_frequency, name='freq [Hz]')
-"""
-button_quit.pack(side=tkinter.BOTTOM)
-#slider_update.pack(side=tkinter.BOTTOM)
-toolbar.pack(side=tkinter.BOTTOM, fill=tkinter.X)
-canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
+drivecoil_nturns_label = ttk.Label(frame_drivecoil, text='Number of turns:')
+drivecoil_nturns_label.grid(column=0, row=2, sticky=tkinter.E)
+drivecoil_nturns_entry_variable = tkinter.StringVar(value='0')
+drivecoil_nturns_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_nturns_entry_variable, validate='all', validatecommand=(int_validator, '%P'))
+drivecoil_nturns_entry.grid(column=1, row=2, sticky=tkinter.W+tkinter.E)
+
+drivecoil_thickness_label = ttk.Label(frame_drivecoil, text='Wire thickness:')
+drivecoil_thickness_label.grid(column=0, row=3, sticky=tkinter.E)
+drivecoil_thickness_entry_variable = tkinter.StringVar(value='0.0')
+drivecoil_thickness_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_thickness_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+drivecoil_thickness_entry.grid(column=1, row=3, sticky=tkinter.W+tkinter.E)
+drivecoil_thickness_units_variable = tkinter.StringVar(value='mm')
+drivecoil_thickness_units = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_thickness_units_variable, values=LENGTH_UNITS, width=5)
+drivecoil_thickness_units.grid(column=2, row=3, sticky=tkinter.W+tkinter.E)
+drivecoil_thickness_units.state(['!disabled', 'readonly'])
+
+drivecoil_material_label = ttk.Label(frame_drivecoil, text='Wire material:')
+drivecoil_material_label.grid(column=0, row=4, sticky=tkinter.E)
+drivecoil_material_entry_variable = tkinter.StringVar(value='')
+drivecoil_material_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_material_entry_variable)
+drivecoil_material_entry.grid(column=1, row=4, columnspan=2, sticky=tkinter.W+tkinter.E)
+drivecoil_material_entry.state(['readonly'])
+def drivecoil_material_button_action():
+    filename = tkinter.filedialog.askopenfilename(initialdir=PROGRAM_DIRECTORY, filetypes=(('Config file', '*.cfg'), ('All files', '*.*')))
+    if filename is not None:
+        drivecoil_material_entry_variable.set(filename)
+drivecoil_material_button = ttk.Button(frame_drivecoil, text='Open...', command=drivecoil_material_button_action)
+drivecoil_material_button.grid(column=3, row=4, sticky=tkinter.W+tkinter.E)
+
+drivecoil_freq_label = ttk.Label(frame_drivecoil, text='Frequency:')
+drivecoil_freq_label.grid(column=0, row=5, sticky=tkinter.E)
+drivecoil_freq_entry_variable = tkinter.StringVar(value='0.0')
+drivecoil_freq_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_freq_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+drivecoil_freq_entry.grid(column=1, row=5, sticky=tkinter.W+tkinter.E)
+drivecoil_freq_units_variable = tkinter.StringVar(value='Hz')
+drivecoil_freq_units = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_freq_units_variable, values=FREQ_UNITS, width=5)
+drivecoil_freq_units.grid(column=2, row=5, sticky=tkinter.W+tkinter.E)
+drivecoil_freq_units.state(['!disabled', 'readonly'])
+
+drivecoil_amp_label = ttk.Label(frame_drivecoil, text='Current:')
+drivecoil_amp_label.grid(column=0, row=6, sticky=tkinter.E)
+drivecoil_amp_entry_variable = tkinter.StringVar(value='0.0')
+drivecoil_amp_entry = ttk.Entry(frame_drivecoil, textvariable=drivecoil_amp_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+drivecoil_amp_entry.grid(column=1, row=6, sticky=tkinter.W+tkinter.E)
+drivecoil_amp_units_variable = tkinter.StringVar(value='A')
+drivecoil_amp_units = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_amp_units_variable, values=CURRENT_UNITS, width=5)
+drivecoil_amp_units.grid(column=2, row=6, sticky=tkinter.W+tkinter.E)
+drivecoil_amp_units.state(['!disabled', 'readonly'])
+drivecoil_amp_type_variable = tkinter.StringVar(value='pkpk')
+drivecoil_amp_type = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_amp_type_variable, values=('pkpk', 'rms'), width=5)
+drivecoil_amp_type.grid(column=3, row=6, sticky=tkinter.W+tkinter.E)
+drivecoil_amp_type.state(['!disabled', 'readonly'])
+
+# Construct submenu for sample coil
+
+frame_samplecoil = ttk.LabelFrame(frame_main, text='Sample Coil Parameters', padding=10)
+frame_samplecoil.grid(column=1, row=0, padx=5, pady=5)
+
+samplecoil_radius_label = ttk.Label(frame_samplecoil, text='Nominal coil radius:')
+samplecoil_radius_label.grid(column=0, row=0, sticky=tkinter.E)
+samplecoil_radius_entry_variable = tkinter.StringVar(value='0.0')
+samplecoil_radius_entry = ttk.Entry(frame_samplecoil, textvariable=samplecoil_radius_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+samplecoil_radius_entry.grid(column=1, row=0, sticky=tkinter.W+tkinter.E)
+samplecoil_radius_units_variable = tkinter.StringVar(value='m')
+samplecoil_radius_units = ttk.Combobox(frame_samplecoil, textvariable=samplecoil_radius_units_variable, values=LENGTH_UNITS, width=5)
+samplecoil_radius_units.grid(column=2, row=0, sticky=tkinter.W+tkinter.E)
+samplecoil_radius_units.state(['!disabled', 'readonly'])
+
+samplecoil_length_label = ttk.Label(frame_samplecoil, text='Coil length:')
+samplecoil_length_label.grid(column=0, row=1, sticky=tkinter.E)
+samplecoil_length_entry_variable = tkinter.StringVar(value='0.0')
+samplecoil_length_entry = ttk.Entry(frame_samplecoil, textvariable=samplecoil_length_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+samplecoil_length_entry.grid(column=1, row=1, sticky=tkinter.W+tkinter.E)
+samplecoil_length_units_variable = tkinter.StringVar(value='m')
+samplecoil_length_units = ttk.Combobox(frame_samplecoil, textvariable=samplecoil_length_units_variable, values=LENGTH_UNITS, width=5)
+samplecoil_length_units.grid(column=2, row=1, sticky=tkinter.W+tkinter.E)
+samplecoil_length_units.state(['!disabled', 'readonly'])
+
+samplecoil_nturns_label = ttk.Label(frame_samplecoil, text='Number of turns:')
+samplecoil_nturns_label.grid(column=0, row=2, sticky=tkinter.E)
+samplecoil_nturns_entry_variable = tkinter.StringVar(value='0')
+samplecoil_nturns_entry = ttk.Entry(frame_samplecoil, textvariable=samplecoil_nturns_entry_variable, validate='all', validatecommand=(int_validator, '%P'))
+samplecoil_nturns_entry.grid(column=1, row=2, sticky=tkinter.W+tkinter.E)
+
+samplecoil_thickness_label = ttk.Label(frame_samplecoil, text='Wire thickness:')
+samplecoil_thickness_label.grid(column=0, row=3, sticky=tkinter.E)
+samplecoil_thickness_entry_variable = tkinter.StringVar(value='0.0')
+samplecoil_thickness_entry = ttk.Entry(frame_samplecoil, textvariable=samplecoil_thickness_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+samplecoil_thickness_entry.grid(column=1, row=3, sticky=tkinter.W+tkinter.E)
+samplecoil_thickness_units_variable = tkinter.StringVar(value='mm')
+samplecoil_thickness_units = ttk.Combobox(frame_samplecoil, textvariable=samplecoil_thickness_units_variable, values=LENGTH_UNITS, width=5)
+samplecoil_thickness_units.grid(column=2, row=3, sticky=tkinter.W+tkinter.E)
+samplecoil_thickness_units.state(['!disabled', 'readonly'])
+
+samplecoil_material_label = ttk.Label(frame_samplecoil, text='Wire material:')
+samplecoil_material_label.grid(column=0, row=4, sticky=tkinter.E)
+samplecoil_material_entry_variable = tkinter.StringVar(value='')
+samplecoil_material_entry = ttk.Entry(frame_samplecoil, textvariable=samplecoil_material_entry_variable)
+samplecoil_material_entry.grid(column=1, row=4, columnspan=2, sticky=tkinter.W+tkinter.E)
+samplecoil_material_entry.state(['readonly'])
+def samplecoil_material_button_action():
+    filename = tkinter.filedialog.askopenfilename(initialdir=PROGRAM_DIRECTORY, filetypes=(('Config file', '*.cfg'), ('All files', '*.*')))
+    if filename is not None:
+        samplecoil_material_entry_variable.set(filename)
+samplecoil_material_button = ttk.Button(frame_samplecoil, text='Open...', command=samplecoil_material_button_action)
+samplecoil_material_button.grid(column=3, row=4, sticky=tkinter.W+tkinter.E)
+
+samplecoil_offset_label = ttk.Label(frame_samplecoil, text='Offset along axis:')
+samplecoil_offset_label.grid(column=0, row=5, sticky=tkinter.E)
+samplecoil_offset_entry_variable = tkinter.StringVar(value='0.0')
+samplecoil_offset_entry = ttk.Entry(frame_samplecoil, textvariable=samplecoil_offset_entry_variable, validate='all', validatecommand=(root.register(is_num), '%P'))
+samplecoil_offset_entry.grid(column=1, row=5, sticky=tkinter.W+tkinter.E)
+samplecoil_offset_units_variable = tkinter.StringVar(value='m')
+samplecoil_offset_units = ttk.Combobox(frame_samplecoil, textvariable=samplecoil_length_units_variable, values=LENGTH_UNITS, width=5)
+samplecoil_offset_units.grid(column=2, row=5, sticky=tkinter.W+tkinter.E)
+samplecoil_offset_units.state(['!disabled', 'readonly'])
+
+# Construct submenu for reference coil
+
+frame_refcoil = ttk.LabelFrame(frame_main, text='Reference Coil Parameters', padding=10)
+frame_refcoil.grid(column=0, row=1, padx=5, pady=5)
+
+refcoil_radius_label = ttk.Label(frame_refcoil, text='Nominal coil radius:')
+refcoil_radius_label.grid(column=0, row=0, sticky=tkinter.E)
+refcoil_radius_entry_variable = tkinter.StringVar(value='0.0')
+refcoil_radius_entry = ttk.Entry(frame_refcoil, textvariable=refcoil_radius_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+refcoil_radius_entry.grid(column=1, row=0, sticky=tkinter.W+tkinter.E)
+refcoil_radius_units_variable = tkinter.StringVar(value='m')
+refcoil_radius_units = ttk.Combobox(frame_refcoil, textvariable=refcoil_radius_units_variable, values=LENGTH_UNITS, width=5)
+refcoil_radius_units.grid(column=2, row=0, sticky=tkinter.W+tkinter.E)
+refcoil_radius_units.state(['!disabled', 'readonly'])
+
+refcoil_length_label = ttk.Label(frame_refcoil, text='Coil length:')
+refcoil_length_label.grid(column=0, row=1, sticky=tkinter.E)
+refcoil_length_entry_variable = tkinter.StringVar(value='0.0')
+refcoil_length_entry = ttk.Entry(frame_refcoil, textvariable=refcoil_length_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+refcoil_length_entry.grid(column=1, row=1, sticky=tkinter.W+tkinter.E)
+refcoil_length_units_variable = tkinter.StringVar(value='m')
+refcoil_length_units = ttk.Combobox(frame_refcoil, textvariable=refcoil_length_units_variable, values=LENGTH_UNITS, width=5)
+refcoil_length_units.grid(column=2, row=1, sticky=tkinter.W+tkinter.E)
+refcoil_length_units.state(['!disabled', 'readonly'])
+
+refcoil_nturns_label = ttk.Label(frame_refcoil, text='Number of turns:')
+refcoil_nturns_label.grid(column=0, row=2, sticky=tkinter.E)
+refcoil_nturns_entry_variable = tkinter.StringVar(value='0')
+refcoil_nturns_entry = ttk.Entry(frame_refcoil, textvariable=refcoil_nturns_entry_variable, validate='all', validatecommand=(int_validator, '%P'))
+refcoil_nturns_entry.grid(column=1, row=2, sticky=tkinter.W+tkinter.E)
+
+refcoil_thickness_label = ttk.Label(frame_refcoil, text='Wire thickness:')
+refcoil_thickness_label.grid(column=0, row=3, sticky=tkinter.E)
+refcoil_thickness_entry_variable = tkinter.StringVar(value='0.0')
+refcoil_thickness_entry = ttk.Entry(frame_refcoil, textvariable=refcoil_thickness_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+refcoil_thickness_entry.grid(column=1, row=3, sticky=tkinter.W+tkinter.E)
+refcoil_thickness_units_variable = tkinter.StringVar(value='mm')
+refcoil_thickness_units = ttk.Combobox(frame_refcoil, textvariable=refcoil_thickness_units_variable, values=LENGTH_UNITS, width=5)
+refcoil_thickness_units.grid(column=2, row=3, sticky=tkinter.W+tkinter.E)
+refcoil_thickness_units.state(['!disabled', 'readonly'])
+
+refcoil_material_label = ttk.Label(frame_refcoil, text='Wire material:')
+refcoil_material_label.grid(column=0, row=4, sticky=tkinter.E)
+refcoil_material_entry_variable = tkinter.StringVar(value='')
+refcoil_material_entry = ttk.Entry(frame_refcoil, textvariable=refcoil_material_entry_variable)
+refcoil_material_entry.grid(column=1, row=4, columnspan=2, sticky=tkinter.W+tkinter.E)
+refcoil_material_entry.state(['readonly'])
+def refcoil_material_button_action():
+    filename = tkinter.filedialog.askopenfilename(initialdir=PROGRAM_DIRECTORY, filetypes=(('Config file', '*.cfg'), ('All files', '*.*')))
+    if filename is not None:
+        refcoil_material_entry_variable.set(filename)
+refcoil_material_button = ttk.Button(frame_refcoil, text='Open...', command=refcoil_material_button_action)
+refcoil_material_button.grid(column=3, row=4, sticky=tkinter.W+tkinter.E)
+
+refcoil_offset_label = ttk.Label(frame_refcoil, text='Offset along axis:')
+refcoil_offset_label.grid(column=0, row=5, sticky=tkinter.E)
+refcoil_offset_entry_variable = tkinter.StringVar(value='0.0')
+refcoil_offset_entry = ttk.Entry(frame_refcoil, textvariable=refcoil_offset_entry_variable, validate='all', validatecommand=(root.register(is_num), '%P'))
+refcoil_offset_entry.grid(column=1, row=5, sticky=tkinter.W+tkinter.E)
+refcoil_offset_units_variable = tkinter.StringVar(value='m')
+refcoil_offset_units = ttk.Combobox(frame_refcoil, textvariable=refcoil_length_units_variable, values=LENGTH_UNITS, width=5)
+refcoil_offset_units.grid(column=2, row=5, sticky=tkinter.W+tkinter.E)
+refcoil_offset_units.state(['!disabled', 'readonly'])
+
+# Construct submenu for sample
+
+frame_sample = ttk.LabelFrame(frame_main, text='Test Sample', padding=10)
+frame_sample.grid(column=1, row=1, padx=5, pady=5)
+
+sample_radius_label = ttk.Label(frame_sample, text='Cylinder radius:')
+sample_radius_label.grid(column=0, row=0, sticky=tkinter.E)
+sample_radius_entry_variable = tkinter.StringVar(value='0.0')
+sample_radius_entry = ttk.Entry(frame_sample, textvariable=sample_radius_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+sample_radius_entry.grid(column=1, row=0, sticky=tkinter.W+tkinter.E)
+sample_radius_units_variable = tkinter.StringVar(value='m')
+sample_radius_units = ttk.Combobox(frame_sample, textvariable=sample_radius_units_variable, values=LENGTH_UNITS, width=5)
+sample_radius_units.grid(column=2, row=0, sticky=tkinter.W+tkinter.E)
+sample_radius_units.state(['!disabled', 'readonly'])
+
+sample_length_label = ttk.Label(frame_sample, text='Cylinder length:')
+sample_length_label.grid(column=0, row=1, sticky=tkinter.E)
+sample_length_entry_variable = tkinter.StringVar(value='0.0')
+sample_length_entry = ttk.Entry(frame_sample, textvariable=sample_length_entry_variable, validate='all', validatecommand=(num_validator, '%P'))
+sample_length_entry.grid(column=1, row=1, sticky=tkinter.W+tkinter.E)
+sample_length_units_variable = tkinter.StringVar(value='m')
+sample_length_units = ttk.Combobox(frame_sample, textvariable=sample_length_units_variable, values=LENGTH_UNITS, width=5)
+sample_length_units.grid(column=2, row=1, sticky=tkinter.W+tkinter.E)
+sample_length_units.state(['!disabled', 'readonly'])
+
+sample_material_label = ttk.Label(frame_sample, text='Material:')
+sample_material_label.grid(column=0, row=2, sticky=tkinter.E)
+sample_material_entry_variable = tkinter.StringVar(value='')
+sample_material_entry = ttk.Entry(frame_sample, textvariable=sample_material_entry_variable)
+sample_material_entry.grid(column=1, row=2, columnspan=2, sticky=tkinter.W+tkinter.E)
+sample_material_entry.state(['readonly'])
+def sample_material_button_action():
+    filename = tkinter.filedialog.askopenfilename(initialdir=PROGRAM_DIRECTORY, filetypes=(('Config file', '*.cfg'), ('All files', '*.*')))
+    if filename is not None:
+        sample_material_entry_variable.set(filename)
+sample_material_button = ttk.Button(frame_sample, text='Open...', command=sample_material_button_action)
+sample_material_button.grid(column=3, row=2, sticky=tkinter.W+tkinter.E)
+
+sample_offset_label = ttk.Label(frame_sample, text='Offset along axis:')
+sample_offset_label.grid(column=0, row=3, sticky=tkinter.E)
+sample_offset_entry_variable = tkinter.StringVar(value='0.0')
+sample_offset_entry = ttk.Entry(frame_sample, textvariable=sample_offset_entry_variable, validate='all', validatecommand=(root.register(is_num), '%P'))
+sample_offset_entry.grid(column=1, row=3, sticky=tkinter.W+tkinter.E)
+sample_offset_units_variable = tkinter.StringVar(value='m')
+sample_offset_units = ttk.Combobox(frame_sample, textvariable=sample_length_units_variable, values=LENGTH_UNITS, width=5)
+sample_offset_units.grid(column=2, row=3, sticky=tkinter.W+tkinter.E)
+sample_offset_units.state(['!disabled', 'readonly'])
+
+# Construct display for the entered geometries
+
+# Construct submenu for running calculation
+
+frame_calculate = ttk.LabelFrame(frame_main, text='Calculation Settings', padding=10)
+frame_calculate.grid(column=0, row=2, columnspan=2, padx=5, pady=5)
+
+domain_radius_label = ttk.Label(frame_calculate, text='Radial resolution (no. of points):')
+domain_radius_label.grid(column=0, row=0, sticky=tkinter.E)
+domain_radius_entry_variable = tkinter.StringVar(value='50')
+domain_radius_entry = ttk.Entry(frame_calculate, textvariable=domain_radius_entry_variable, validate='all', validatecommand=(int_validator, '%P'))
+domain_radius_entry.grid(column=1, row=0, sticky=tkinter.W+tkinter.E)
+
+domain_length_label = ttk.Label(frame_calculate, text='Axial resolution (no. of points):')
+domain_length_label.grid(column=0, row=1, sticky=tkinter.E)
+domain_length_entry_variable = tkinter.StringVar(value='50')
+domain_length_entry = ttk.Entry(frame_calculate, textvariable=domain_length_entry_variable, validate='all', validatecommand=(int_validator, '%P'))
+domain_length_entry.grid(column=1, row=1, sticky=tkinter.W+tkinter.E)
+
+domain_time_label = ttk.Label(frame_calculate, text='Temporal resolution (no. of points):')
+domain_time_label.grid(column=0, row=2, sticky=tkinter.E)
+domain_time_entry_variable = tkinter.StringVar(value='50')
+domain_time_entry = ttk.Entry(frame_calculate, textvariable=domain_time_entry_variable, validate='all', validatecommand=(int_validator, '%P'))
+domain_time_entry.grid(column=1, row=2, sticky=tkinter.W+tkinter.E)
+
+def test_command():
+    print('radius = ', Q_(float(drivecoil_radius_entry_variable.get()), drivecoil_radius_units_variable.get()))
+    print('length = ', Q_(float(drivecoil_length_entry_variable.get()), drivecoil_length_units_variable.get()))
+    print('thickness = ', Q_(float(drivecoil_thickness_entry_variable.get()), drivecoil_thickness_units_variable.get()))
+    print('radius = ', Q_(float(samplecoil_radius_entry_variable.get()), samplecoil_radius_units_variable.get()))
+    print('length = ', Q_(float(samplecoil_length_entry_variable.get()), samplecoil_length_units_variable.get()))
+    print('thickness = ', Q_(float(samplecoil_thickness_entry_variable.get()), samplecoil_thickness_units_variable.get()))
+    print('radius = ', Q_(float(refcoil_radius_entry_variable.get()), refcoil_radius_units_variable.get()))
+    print('length = ', Q_(float(refcoil_length_entry_variable.get()), refcoil_length_units_variable.get()))
+    print('thickness = ', Q_(float(refcoil_thickness_entry_variable.get()), refcoil_thickness_units_variable.get()))
+
+ttk.Button(frame_calculate, text='Calculate!', command=test_command).grid(column=0, row=3, columnspan=2, padx=5, pady=5)
 
 #========================================================================================================================
 # Enter main application loop

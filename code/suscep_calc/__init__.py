@@ -7,6 +7,12 @@ ureg.default_format = '~P'
 ureg.setup_matplotlib()
 Q_ = ureg.Quantity
 
+LENGTH_UNITS = ('m', 'cm', 'mm', 'in')  # List of acceptable units of length
+FREQ_UNITS = ('Hz', 'rad/s', 'rpm')     # List of acceptable units of frequency (watch out - pint doesn't handle Hertz correctly)
+CURRENT_UNITS = ('A', 'mA', 'nA', 'kA') # List of acceptable units of current
+B_UNITS = ('T',)                        # List of acceptable units of B field
+H_UNITS = ('A/m',)                      # List of acceptable units of H field
+
 #------------------------------------------------------------------------------------------------------------------------
 # Global constants
 
