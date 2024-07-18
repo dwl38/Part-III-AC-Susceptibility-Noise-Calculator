@@ -37,7 +37,13 @@ DEBUG_FLAG = program_args.debug
 if DEBUG_FLAG:
     print('Program launched in debug mode!\n')
     
+#========================================================================================================================
+# Create cache for future read-writes
+
 PROGRAM_DIRECTORY = os.getcwd()
+CACHE_DIRECTORY = os.path.join(PROGRAM_DIRECTORY, '._cache')
+if not os.path.isdir(CACHE_DIRECTORY):
+    os.mkdir(CACHE_DIRECTORY)
 
 #========================================================================================================================
 # Testing, to be removed!!!
@@ -78,6 +84,7 @@ int_validator = root.register(is_pos_int) # Validator for enforcing user input a
 frame_main = ttk.Frame(root, padding=10)
 frame_main.grid()
 
+#------------------------------------------------------------------------------------------------------------------------
 # Construct submenu for drive coil
 
 frame_drivecoil = ttk.LabelFrame(frame_main, text='Drive Coil Parameters', padding=10)
@@ -156,6 +163,7 @@ drivecoil_amp_type = ttk.Combobox(frame_drivecoil, textvariable=drivecoil_amp_ty
 drivecoil_amp_type.grid(column=3, row=6, sticky=tkinter.W+tkinter.E)
 drivecoil_amp_type.state(['!disabled', 'readonly'])
 
+#------------------------------------------------------------------------------------------------------------------------
 # Construct submenu for sample coil
 
 frame_samplecoil = ttk.LabelFrame(frame_main, text='Sample Coil Parameters', padding=10)
@@ -220,6 +228,7 @@ samplecoil_offset_units = ttk.Combobox(frame_samplecoil, textvariable=samplecoil
 samplecoil_offset_units.grid(column=2, row=5, sticky=tkinter.W+tkinter.E)
 samplecoil_offset_units.state(['!disabled', 'readonly'])
 
+#------------------------------------------------------------------------------------------------------------------------
 # Construct submenu for reference coil
 
 frame_refcoil = ttk.LabelFrame(frame_main, text='Reference Coil Parameters', padding=10)
@@ -284,6 +293,7 @@ refcoil_offset_units = ttk.Combobox(frame_refcoil, textvariable=refcoil_length_u
 refcoil_offset_units.grid(column=2, row=5, sticky=tkinter.W+tkinter.E)
 refcoil_offset_units.state(['!disabled', 'readonly'])
 
+#------------------------------------------------------------------------------------------------------------------------
 # Construct submenu for sample
 
 frame_sample = ttk.LabelFrame(frame_main, text='Test Sample', padding=10)
@@ -332,8 +342,65 @@ sample_offset_units = ttk.Combobox(frame_sample, textvariable=sample_length_unit
 sample_offset_units.grid(column=2, row=3, sticky=tkinter.W+tkinter.E)
 sample_offset_units.state(['!disabled', 'readonly'])
 
+#------------------------------------------------------------------------------------------------------------------------
 # Construct display for the entered geometries
 
+frame_display = ttk.LabelFrame(frame_main, text='Visualizer', padding=10)
+frame_display.grid(column=2, row=0, rowspan=3, padx=5, pady=5, sticky=tkinter.N+tkinter.S)
+
+display_width = 250
+display_height = 400
+
+display_canvas = tkinter.Canvas(frame_display, bg='#fff', width=display_width, height=display_height)
+display_canvas.grid(column=0, row=0)
+
+# Define the display's update function
+def update_display():
+    
+    # Find all of the physical parameters (standardized to units of meters)...
+
+    sample_r = Q_(float(sample_radius_entry_variable.get()), sample_radius_units_variable.get()).to('m').magnitude
+    sample_l = Q_(float(sample_length_entry_variable.get()), sample_length_units_variable.get()).to('m').magnitude
+    sample_z = Q_(float(sample_offset_entry_variable.get()), sample_offset_units_variable.get()).to('m').magnitude
+    sample_z1 = sample_z - (sample_l/2)
+    sample_z2 = sample_z + (sample_l/2)
+    
+    samplecoil_r = Q_(float(samplecoil_radius_entry_variable.get()), samplecoil_radius_units_variable.get()).to('m').magnitude
+    samplecoil_l = Q_(float(samplecoil_length_entry_variable.get()), samplecoil_length_units_variable.get()).to('m').magnitude
+    samplecoil_z = Q_(float(samplecoil_offset_entry_variable.get()), samplecoil_offset_units_variable.get()).to('m').magnitude
+    samplecoil_z1 = samplecoil_z - (samplecoil_l/2)
+    samplecoil_z2 = samplecoil_z + (samplecoil_l/2)
+    
+    refcoil_r = Q_(float(refcoil_radius_entry_variable.get()), refcoil_radius_units_variable.get()).to('m').magnitude
+    refcoil_l = Q_(float(refcoil_length_entry_variable.get()), refcoil_length_units_variable.get()).to('m').magnitude
+    refcoil_z = Q_(float(refcoil_offset_entry_variable.get()), refcoil_offset_units_variable.get()).to('m').magnitude
+    refcoil_z1 = refcoil_z - (refcoil_l/2)
+    refcoil_z2 = refcoil_z + (refcoil_l/2)
+    
+    drivecoil_r = Q_(float(drivecoil_radius_entry_variable.get()), drivecoil_radius_units_variable.get()).to('m').magnitude
+    drivecoil_l = Q_(float(drivecoil_length_entry_variable.get()), drivecoil_length_units_variable.get()).to('m').magnitude
+    drivecoil_z1 = -(drivecoil_l/2)
+    drivecoil_z2 = (drivecoil_l/2)
+
+    system_r = max(sample_r, samplecoil_r, refcoil_r, drivecoil_r)      # Largest r coordinate to draw
+    system_z1 = min(sample_z1, samplecoil_z1, refcoil_z1, drivecoil_z1) # Most negative z coordinate to draw
+    system_z2 = max(sample_z2, samplecoil_z2, refcoil_z2, drivecoil_z2) # Most positive z coordinate to draw
+
+    if (system_r == 0.0) or (system_z1 == system_z2):                   # Abort routine early if system size is zero
+        return None
+
+    # Calculate scaling factor for nice display (adding 5% margins on each side of the display)
+    scale_r = display_width / (2.2 * system_r)
+    scale_z = display_height / (1.1 * (system_z2 - system_z1))
+    offset_r = display_width / 2
+    offset_z = (display_height / 2) - (scale_z * ((system_z2 + system_z1) / 2))
+
+    # Reset display
+    display_canvas.delete('resettable')
+
+ttk.Button(frame_display, text='Update').grid(column=0, row=1, padx=5, pady=5, sticky=tkinter.S)
+
+#------------------------------------------------------------------------------------------------------------------------
 # Construct submenu for running calculation
 
 frame_calculate = ttk.LabelFrame(frame_main, text='Calculation Settings', padding=10)
