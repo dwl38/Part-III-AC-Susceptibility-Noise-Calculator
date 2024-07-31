@@ -25,7 +25,7 @@ VACUUM_PERMEABILITY_SI = VACUUM_PERMEABILITY.to_base_units().magnitude
 SPEED_OF_LIGHT_SI = SPEED_OF_LIGHT.to_base_units().magnitude
 
 PROGRAM_NAME = 'AC Susceptibility Calculator'
-PROGRAM_VERSION = '0.0.1'
+PROGRAM_VERSION = '0.0.2'
 PROGRAM_DESCRIPTION = ('A python tool for calculating the noise generated in an AC susceptibility measurement of an ' +
                         'arbitrary nonlinear sample; copyrighted (c) 2024 under the MIT License by Darren Wayne Lim.')
 
@@ -53,3 +53,25 @@ def is_vector(x) -> bool:
 def is_np_vector(x) -> bool:
     """Stricter version of is_vector(), which requires that x is actually a rank-1 NDArray (for broadcasting etc.)."""
     return isinstance(x, np.ndarray) and len(x.shape) == 1
+
+def is_real_number(x) -> bool:
+    """Checks if x can be cast to a real number."""
+    try:
+        float(x)
+        return True
+    except:
+        return False
+    
+def is_nonneg_real_number(x) -> bool:
+    """Checks if x can be cast to a non-negative real number."""
+    try:
+        return float(x) >= 0.0
+    except:
+        return False
+    
+def is_nonneg_int(x) -> bool:
+    """Checks if x can be cast to a non-negative integer."""
+    try:
+        return int(x) >= 0
+    except:
+        return False

@@ -4,11 +4,11 @@ A repository for my Part III Masters Project, on predicting noise in AC suscepti
 The 'code/' folder contains the source code, while the 'dist/' folder contains the necessary files for the Windows distribution.
 
 ## How to use
-**<ins>Windows</ins>.** The 'dist/' folder contains two items: 'suscep_calc.exe', and a 'data/' folder. Download & copy both of these items into the same folder on your computer (they have to be placed in the same location!). You can then run 'suscep_calc.exe' directly with no prerequisites.
+**<ins>Windows</ins>.** Download the 'dist/AC Susceptibility Noise Calculator' folder on your computer, and save it anywhere you like. You can then run the 'main.exe' file inside the folder directly with no prerequisites.
 
 **<ins>Cross-Platform</ins>.** Alternatively, you can run the program as a Python script. Download & copy all of the contents of the 'code/' folder, making sure to preserve the file structure in your install location; you may rename the 'code/' root folder itself, but not any of the internal folders. You can now run the program from 'main.pyw'. Note that you will need the following prerequisites:
 
-- Python installed on your computer, version at least 3.0
+- Python installed on your computer, version at least 3.5
 - The following Python libraries installed:
 	- `numpy`
 	- `scipy`
@@ -17,6 +17,9 @@ The 'code/' folder contains the source code, while the 'dist/' folder contains t
 	- `pint`
 
 ## Changelog
+
+#### v0.0.2
+Added saving/loading features.
 
 #### v0.0.1
 First prototype version! Heavily limited functionalities (e.g. system constrained to be cylindrically-symmetric only), a very clunky UI, and results not rigorously proven yet; intended for demonstration purposes only.
