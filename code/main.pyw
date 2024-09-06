@@ -55,12 +55,13 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
                       sample_mat: Material, sample_r: float, sample_l: float, sample_z: float,
                       ang_freq: float, current: complex,
                       npoints_r: int, npoints_z: int, npoints_t: int,
-                      progressbar_var: tkinter.IntVar = None) -> complex:
+                      progressbar_window: tkinter.Toplevel = None, progressbar_var: tkinter.IntVar = None) -> complex:
     
     if DEBUG_FLAG:
         print('Function \'calculate_voltage\' launched.')
-    if progressbar_var is not None:
+    if progressbar_window is not None and progressbar_var is not None:
         progressbar_var.set(0)
+        progressbar_window.update()
 
     # Find outer bounds of the system (assuming cylindrical symmetry!)
     system_r = max(samplecoil.radius, refcoil.radius, sample_r)
@@ -82,8 +83,9 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
             test_points[(npoints_z * i) + j] = np.array((x, 0.0, z))
 
     # Update progress bar
-    if progressbar_var is not None:
+    if progressbar_window is not None and progressbar_var is not None:
         progressbar_var.set(10)
+        progressbar_window.update()
     if DEBUG_FLAG:
         print(f'  - Generated {test_points.shape[0]} test points')
 
@@ -91,8 +93,9 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
     H_field_flattened = drivecoil.calculate_H_field(test_points, ang_freq, current)
     
     # Update progress bar
-    if progressbar_var is not None:
-        progressbar_var.set(30)
+    if progressbar_window is not None and progressbar_var is not None:
+        progressbar_var.set(40)
+        progressbar_window.update()
     if DEBUG_FLAG:
         print(f'  - Calculated H field of drive coil')
 
@@ -101,8 +104,8 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
 
     if sample_mat.is_magnetically_linear():
         # Case 1: sample is linear. Then B field is simply permeability times H field, inside and outside the sample.
-        # We iterate through all calculated points and check if they are inside the sample cylinder; if inside, multiply by
-        # the absolute sample permeability, otherwise if outside multiply by the vacuum permeability.
+        # We iterate through all calculated points and check if they are inside the sample cylinder; if inside, multiply
+        # by the absolute sample permeability, otherwise if outside multiply by the vacuum permeability.
         sample_permeability = VACUUM_PERMEABILITY_SI * (1 + sample_mat.magnetic_susceptibility())
         for i in range(test_points.shape[0]):
             if (test_points[i, 0] < sample_r) and (abs(test_points[i, 2] - sample_z) < (sample_l / 2)):
@@ -111,12 +114,22 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
                 B_field_flattened[i] = VACUUM_PERMEABILITY_SI * H_field_flattened[i]
 
     else:
-        # Case 2: sample is nonlinear. Then calculation needs to switch to the time domain.
-        B_field_flattened = np.zeros_like(H_field_flattened, dtype=complex) # TODO
+        # Case 2: sample is nonlinear. Then calculation needs to switch to the time domain if calculated points lie
+        # inside the sample cylinder.
+        for i in range(test_points.shape[0]):
+            if (test_points[i, 0] < sample_r) and (abs(test_points[i, 2] - sample_z) < (sample_l / 2)):
+                H_field_phasors = [(H_field_flattened[i], ang_freq),]
+                B_field_phasors = sample_mat.calculate_B_field_from_H_field(H_field_phasors, npoints_t)
+                for phasor in B_field_phasors:
+                    if phasor[1] == ang_freq:
+                        B_field_flattened[i] = phasor[0]
+            else:
+                B_field_flattened[i] = VACUUM_PERMEABILITY_SI * H_field_flattened[i]
         
     # Update progress bar
-    if progressbar_var is not None:
-        progressbar_var.set(50)
+    if progressbar_window is not None and progressbar_var is not None:
+        progressbar_var.set(60)
+        progressbar_window.update()
     if DEBUG_FLAG:
         print(f'  - Calculated B field of system')
 
@@ -135,8 +148,9 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
     B_field = VectorField(rotated_points, rotated_B_field)
     
     # Update progress bar
-    if progressbar_var is not None:
-        progressbar_var.set(60)
+    if progressbar_window is not None and progressbar_var is not None:
+        progressbar_var.set(70)
+        progressbar_window.update()
     if DEBUG_FLAG:
         print(f'  - Extrapolated B field around cylindrical symmetry')
 
@@ -145,8 +159,9 @@ def calculate_voltage(drivecoil: CircuitElement, samplecoil: CircuitElement, ref
     refcoil_voltage = refcoil.calculate_induced_voltage(B_field, ang_freq)
     
     # Update progress bar
-    if progressbar_var is not None:
+    if progressbar_window is not None and progressbar_var is not None:
         progressbar_var.set(100)
+        progressbar_window.update()
     if DEBUG_FLAG:
         print(f'  - Calculated voltages\n')
 

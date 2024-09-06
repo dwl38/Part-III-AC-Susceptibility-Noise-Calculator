@@ -183,11 +183,24 @@ class CalculationSubmenu(GUIElement):
                 tkinter.messagebox.showerror(title='Error', message='Error occured:\n\n'+str(e))
                 return None
 
+            # Create a pop-up window to display progress
+
+            progress_window = tk.Toplevel()
+            tk.Label(progress_window, text='Calculating...').grid(row=0, column=0)
+            progressbar_var = tk.IntVar()
+            progressbar = ttk.Progressbar(progress_window, variable=progressbar_var, maximum=100)
+            progressbar.grid(row=1, column=0)
+            progress_window.pack_slaves()
+
             # Run the calculation
 
             result = calculate_voltage(drivecoil, samplecoil, refcoil, sample_mat, sample_r, sample_l, sample_z,
-                                       ang_freq, current, npoints_r, npoints_z, npoints_t, None)
+                                       ang_freq, current, npoints_r, npoints_z, npoints_t, progress_window, progressbar_var)
 
+            # Close pop-up window
+            progress_window.destroy()
+
+            # Output result
             print('\n' + str(result))
             tkinter.messagebox.showinfo(title='Result', message='Result obtained: ' + str(result) + ' V')
             

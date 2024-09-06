@@ -8,7 +8,7 @@ The 'code/' folder contains the source code, while the 'dist/' folder contains t
 
 **<ins>Cross-Platform</ins>.** Alternatively, you can run the program as a Python script. Download & copy all of the contents of the 'code/' folder, making sure to preserve the file structure in your install location; you may rename the 'code/' root folder itself, but not any of the internal folders. You can now run the program from 'main.pyw'. Note that you will need the following prerequisites:
 
-- Python installed on your computer, version at least 3.5
+- Python installed on your computer, version at least 3.9
 - The following Python libraries installed:
 	- `numpy`
 	- `scipy`
@@ -17,6 +17,9 @@ The 'code/' folder contains the source code, while the 'dist/' folder contains t
 	- `pint`
 
 ## Changelog
+
+#### v0.1.0
+Added *an* implementation of the Jiles-Atherton model for nonlinear materials (was previously left as a "todo"). Not completely sure about physical accuracy yet...
 
 #### v0.0.2
 Added saving/loading features.

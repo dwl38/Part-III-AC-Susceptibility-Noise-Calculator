@@ -76,7 +76,7 @@ class FileIO(GUIElement):
                         err_str += err
                     if r > 0:
                         tkinter.messagebox.showwarning(title='Warning', message='Configuration file contains errors:\n\n'+err_str+'\nErroneous values set to default.')
-                except e:
+                except Exception as e:
                     tkinter.messagebox.showerror(title='Error', message='Error occured while loading "'+filename+'":\n\n'+str(e))
    
         self.load_button = ttk.Button(self.frame, text='Load...', command=load_button_action)

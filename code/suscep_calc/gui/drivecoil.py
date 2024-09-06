@@ -78,6 +78,11 @@ class Drivecoil(GUIElement):
                 initdir = PROGRAM_DIRECTORY
             filename = tkinter.filedialog.askopenfilename(initialdir=initdir, filetypes=(('Config file', '*.cfg'), ('All files', '*.*')))
             if filename is not None:
+                try:
+                    if os.path.commonpath([PROGRAM_DIRECTORY,]) == os.path.commonpath([PROGRAM_DIRECTORY, filename]):
+                        filename = os.path.relpath(filename, PROGRAM_DIRECTORY)
+                except:
+                    pass
                 self.material_entry_variable.set(filename)
         self.material_button = ttk.Button(self.frame, text='Open...', command=material_button_action)
         self.material_button.grid(column=3, row=4, sticky=tk.W+tk.E)
